@@ -3,7 +3,7 @@ import discord
 from discord.ext import commands
 
 # 1. Set up your specific channel ID here
-RUST_ALERT_CHANNEL_ID = 1535109736578547712  # Replace with your channel ID
+RUST_ALERT_CHANNEL_ID = 1424585775772602448  # Replace with your channel ID
 
 # 2. Define intents (Presences intent is required)
 intents = discord.Intents.default()
