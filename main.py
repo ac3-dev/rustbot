@@ -1,60 +1,114 @@
-
 import os
+import aiohttp
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 
-# 1. Set up your specific channel ID here
-RUST_ALERT_CHANNEL_ID = 1424585775772602448  # Replace with your channel ID
+# ==========================================
+# ⚙️ CONFIGURATION & TARGET PLAYERS
+# ==========================================
 
-# 2. Define intents (Presences intent is required)
+# 1. Alert Channel ID
+RUST_ALERT_CHANNEL_ID = 1424585775772602448
+
+# 2. Tracked Players (SteamID64 -> Display Name)
+# Rust App ID on Steam is 252490
+RUST_APP_ID = "252490"
+TRACKED_PLAYERS = {
+    "76561199115906390": "TargetPlayer",  # Paste the 17-digit SteamID64 here
+}
+
+# 3. Environment Variables
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+STEAM_API_KEY = os.getenv("STEAM_API_KEY")
+
+# Track online state to prevent duplicate alerts
+player_online_status = {steam_id: False for steam_id in TRACKED_PLAYERS}
+
+# ==========================================
+# 🤖 BOT SETUP & STEAM API CHECK
+# ==========================================
+
 intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
-intents.presences = True
-
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+
+async def check_steam_status(session: aiohttp.ClientSession, steam_id: str):
+  """Checks Steam directly to see if the user is in-game playing Rust."""
+  url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={STEAM_API_KEY}&steamids={steam_id}"
+
+  try:
+    async with session.get(url) as response:
+      if response.status == 200:
+        data = await response.json()
+        players = data.get("response", {}).get("players", [])
+        if players:
+          player = players[0]
+          # gameid / gameextrainfo appears when they are actively playing
+          game_id = str(player.get("gameid", ""))
+          game_name = player.get("gameextrainfo", "")
+          avatar = player.get("avatarfull", "")
+
+          if game_id == RUST_APP_ID or "rust" in game_name.lower():
+            return True, game_name or "Rust", avatar
+      return False, None, None
+  except Exception as e:
+    print(f"Error checking Steam API for {steam_id}: {e}")
+    return False, None, None
+
+
+# Checks Steam every 60 seconds
+@tasks.loop(seconds=60)
+async def steam_tracker_loop():
+  channel = bot.get_channel(RUST_ALERT_CHANNEL_ID)
+  if not channel:
+    return
+
+  async with aiohttp.ClientSession() as session:
+    for steam_id, player_name in TRACKED_PLAYERS.items():
+      is_online, game_name, avatar_url = await check_steam_status(
+          session, steam_id
+      )
+      was_online = player_online_status.get(steam_id, False)
+
+      # Trigger alert when they open Rust (Offline -> Playing Rust)
+      if is_online and not was_online:
+        player_online_status[steam_id] = True
+
+        embed = discord.Embed(
+            title="🎮 Rust Activity Alert",
+            description=f"**{player_name}** is now playing **{game_name}**!",
+            color=discord.Color.orange(),
+        )
+        if avatar_url:
+          embed.set_thumbnail(url=avatar_url)
+        embed.add_field(
+            name="Steam Profile",
+            value=f"[View Profile](https://steamcommunity.com/profiles/{steam_id})",
+            inline=False,
+        )
+        await channel.send(embed=embed)
+
+      # Reset status when they close the game
+      elif not is_online and was_online:
+        player_online_status[steam_id] = False
+
+
+@steam_tracker_loop.before_loop
+async def before_steam_tracker_loop():
+  await bot.wait_until_ready()
 
 
 @bot.event
 async def on_ready():
   print(f"Logged on as {bot.user}!")
+  if not steam_tracker_loop.is_running():
+    steam_tracker_loop.start()
 
 
-@bot.event
-async def on_presence_update(before: discord.Member, after: discord.Member):
-  # Ignore bots
-  if after.bot:
-    return
-
-  # Extract game names from playing activities
-  before_games = [
-      act.name.lower()
-      for act in before.activities
-      if act.type == discord.ActivityType.playing and act.name
-  ]
-  after_games = [
-      act.name.lower()
-      for act in after.activities
-      if act.type == discord.ActivityType.playing and act.name
-  ]
-
-  # Check if they just started playing Rust
-  if "rust" not in before_games and "rust" in after_games:
-    channel = bot.get_channel(RUST_ALERT_CHANNEL_ID)
-    if channel:
-      embed = discord.Embed(
-          title="🎮 Rust Activity Alert",
-          description=f"{after.mention} is now playing **Rust**!",
-          color=discord.Color.orange(),
-      )
-      embed.set_thumbnail(url=after.display_avatar.url)
-      await channel.send(embed=embed)
-
-
-# --- BOT RUNNER ---
-TOKEN = os.getenv("DISCORD_TOKEN")
-
-if not TOKEN:
+# Startup validation
+if not DISCORD_TOKEN:
   raise ValueError("❌ DISCORD_TOKEN environment variable is missing!")
+if not STEAM_API_KEY:
+  raise ValueError("❌ STEAM_API_KEY environment variable is missing!")
 
-bot.run(TOKEN)
+bot.run(DISCORD_TOKEN)
