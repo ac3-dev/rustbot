@@ -15,6 +15,7 @@ RUST_ALERT_CHANNEL_ID = 1424585775772602448
 RUST_APP_ID = "252490"
 TRACKED_PLAYERS = {
     "76561199244950673": "Ace",  # Replace PlayerName with your desired display name
+    "76561199115906390": "Ziirka",  # Replace PlayerName with your desired display name
 }
 
 # 3. Environment Variables
