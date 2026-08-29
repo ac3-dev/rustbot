@@ -14,7 +14,7 @@ RUST_ALERT_CHANNEL_ID = 1424585775772602448
 # Rust App ID on Steam is 252490
 RUST_APP_ID = "252490"
 TRACKED_PLAYERS = {
-    "76561199115906390": "TargetPlayer",  # Paste the 17-digit SteamID64 here
+    "76561199244950673": "PlayerAce",  # Replace PlayerName with whatever nickname you want
 }
 
 # 3. Environment Variables
