@@ -1,1 +1,60 @@
 
+import os
+import discord
+from discord.ext import commands
+
+# 1. Set up your specific channel ID here
+RUST_ALERT_CHANNEL_ID = 1424585775772602448  # Replace with your channel ID
+
+# 2. Define intents (Presences intent is required)
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+intents.presences = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+
+@bot.event
+async def on_ready():
+  print(f"Logged on as {bot.user}!")
+
+
+@bot.event
+async def on_presence_update(before: discord.Member, after: discord.Member):
+  # Ignore bots
+  if after.bot:
+    return
+
+  # Extract game names from playing activities
+  before_games = [
+      act.name.lower()
+      for act in before.activities
+      if act.type == discord.ActivityType.playing and act.name
+  ]
+  after_games = [
+      act.name.lower()
+      for act in after.activities
+      if act.type == discord.ActivityType.playing and act.name
+  ]
+
+  # Check if they just started playing Rust
+  if "rust" not in before_games and "rust" in after_games:
+    channel = bot.get_channel(RUST_ALERT_CHANNEL_ID)
+    if channel:
+      embed = discord.Embed(
+          title="🎮 Rust Activity Alert",
+          description=f"{after.mention} is now playing **Rust**!",
+          color=discord.Color.orange(),
+      )
+      embed.set_thumbnail(url=after.display_avatar.url)
+      await channel.send(embed=embed)
+
+
+# --- BOT RUNNER ---
+TOKEN = os.getenv("DISCORD_TOKEN")
+
+if not TOKEN:
+  raise ValueError("❌ DISCORD_TOKEN environment variable is missing!")
+
+bot.run(TOKEN)
