@@ -14,14 +14,14 @@ RUST_ALERT_CHANNEL_ID = 1424585775772602448
 # Rust App ID on Steam is 252490
 RUST_APP_ID = "252490"
 TRACKED_PLAYERS = {
-    "76561199244950673": "PlayerAce",  # Replace PlayerName with whatever nickname you want
+    "76561199244950673": "Ace",  # Replace PlayerName with your desired display name
 }
 
 # 3. Environment Variables
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 STEAM_API_KEY = os.getenv("STEAM_API_KEY")
 
-# Track online state to prevent duplicate alerts
+# Track online state to detect both login and logout events
 player_online_status = {steam_id: False for steam_id in TRACKED_PLAYERS}
 
 # ==========================================
@@ -43,13 +43,13 @@ async def check_steam_status(session: aiohttp.ClientSession, steam_id: str):
         players = data.get("response", {}).get("players", [])
         if players:
           player = players[0]
-          # gameid / gameextrainfo appears when they are actively playing
           game_id = str(player.get("gameid", ""))
           game_name = player.get("gameextrainfo", "")
           avatar = player.get("avatarfull", "")
 
           if game_id == RUST_APP_ID or "rust" in game_name.lower():
             return True, game_name or "Rust", avatar
+          return False, None, avatar
       return False, None, None
   except Exception as e:
     print(f"Error checking Steam API for {steam_id}: {e}")
@@ -70,14 +70,14 @@ async def steam_tracker_loop():
       )
       was_online = player_online_status.get(steam_id, False)
 
-      # Trigger alert when they open Rust (Offline -> Playing Rust)
+      # 🟢 Player hopped ON Rust
       if is_online and not was_online:
         player_online_status[steam_id] = True
 
         embed = discord.Embed(
             title="🎮 Rust Activity Alert",
             description=f"**{player_name}** is now playing **{game_name}**!",
-            color=discord.Color.orange(),
+            color=discord.Color.green(),
         )
         if avatar_url:
           embed.set_thumbnail(url=avatar_url)
@@ -88,9 +88,23 @@ async def steam_tracker_loop():
         )
         await channel.send(embed=embed)
 
-      # Reset status when they close the game
+      # 🔴 Player got OFF Rust
       elif not is_online and was_online:
         player_online_status[steam_id] = False
+
+        embed = discord.Embed(
+            title="🛑 Rust Activity Alert",
+            description=f"**{player_name}** got off **Rust**!",
+            color=discord.Color.red(),
+        )
+        if avatar_url:
+          embed.set_thumbnail(url=avatar_url)
+        embed.add_field(
+            name="Steam Profile",
+            value=f"[View Profile](https://steamcommunity.com/profiles/{steam_id})",
+            inline=False,
+        )
+        await channel.send(embed=embed)
 
 
 @steam_tracker_loop.before_loop
